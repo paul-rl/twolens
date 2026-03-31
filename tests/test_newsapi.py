@@ -356,7 +356,7 @@ def test_brand_mentions_from_news_articles(sample_raw_response):
     assert mentions[0]["source_platform"] == "newsapi"
     assert mentions[0]["mention_type"] == "news_article"
     assert mentions[0]["mention_id"].startswith("news_")
-    assert mentions[0]["engagement_score"] == None
+    assert mentions[0]["engagement_score"] is None
     assert mentions[0]["source_detail"] == "BBC News"
 
 
