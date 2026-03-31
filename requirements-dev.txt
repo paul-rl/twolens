@@ -1,0 +1,16 @@
+# TwoLens: Dev & CI Dependencies
+
+# Linting & formatting
+ruff>=0.6.0
+
+# Type checking
+mypy>=1.11.0
+
+# Testing
+pytest>=8.3.0
+pytest-mock>=3.14.0
+pytest-cov>=5.0.0
+
+# Security
+bandit>=1.7.0        # SAST — scans source code for security anti-patterns
+pip-audit>=2.7.0     # SCA  — scans dependencies for known vulnerabilities

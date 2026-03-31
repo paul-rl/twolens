@@ -1,0 +1,10 @@
+# TwoLens: Production Dependencies
+
+# GCP / BigQuery
+google-cloud-bigquery>=3.25.0
+
+# HTTP / API clients
+requests>=2.32.0
+
+# Environment & config
+python-dotenv>=1.0.0

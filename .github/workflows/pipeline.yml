@@ -1,0 +1,69 @@
+name: TwoLens Pipeline
+
+on:
+  # Scheduled runs. Twice daily: 8:00 AM and 8:00 PM UTC
+  schedule:
+    - cron: '0 8 * * *'
+    - cron: '0 20 * * *'
+
+  # Manual trigger for demos and testing
+  workflow_dispatch:
+    inputs:
+      query_terms:
+        description: 'Comma-separated brand names to monitor (leave blank for defaults)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Log actions without writing to BigQuery'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  BQ_DATASET: twolens
+  NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+  YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+jobs:
+  run-pipeline:
+    name: Run TwoLens Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Preflight checks
+        run: python src/preflight.py
+
+      - name: Run pipeline
+        run: |
+          python src/main.py \
+            ${{ github.event.inputs.query_terms && format('--query-terms "{0}"', github.event.inputs.query_terms) || '' }} \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            --trigger ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 14
