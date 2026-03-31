@@ -13,7 +13,8 @@ Exit codes:
 import logging
 import os
 import sys
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import requests
 
@@ -34,7 +35,7 @@ CHECKS_FAILED = 0
 def check(name: str, critical: bool = True) -> Callable[[F], Callable[[], None]]:
     """Decorator that wraps a check function with pass/fail logging."""
 
-    def decorator(fn) -> Callable[[], None]:
+    def decorator(fn: F) -> Callable[[], None]:
         def wrapper() -> None:
             global CHECKS_PASSED, CHECKS_FAILED
             try:
