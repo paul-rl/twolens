@@ -56,7 +56,7 @@ def check_env_vars():
     required = ["GCP_PROJECT_ID", "BQ_DATASET", "NEWSAPI_KEY", "YOUTUBE_API_KEY"]
     missing = [var for var in required if not os.environ.get(var)]
     if missing:
-        raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
+        raise OSError(f"Missing environment variables: {', '.join(missing)}")
 
 
 # ─── NewsAPI ──────────────────────────────────────────────────────────────────
