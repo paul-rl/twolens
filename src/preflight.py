@@ -13,8 +13,12 @@ Exit codes:
 import logging
 import os
 import sys
+from typing import Any, Callable, TypeVar
 
 import requests
+
+# Type alias for the functions being decorated
+F = TypeVar("F", bound=Callable[..., Any])
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,11 +31,11 @@ CHECKS_PASSED = 0
 CHECKS_FAILED = 0
 
 
-def check(name: str, critical: bool = True):
+def check(name: str, critical: bool = True) -> Callable[[F], Callable[[], None]]:
     """Decorator that wraps a check function with pass/fail logging."""
 
-    def decorator(fn):
-        def wrapper():
+    def decorator(fn) -> Callable[[], None]:
+        def wrapper() -> None:
             global CHECKS_PASSED, CHECKS_FAILED
             try:
                 fn()
@@ -52,7 +56,7 @@ def check(name: str, critical: bool = True):
 
 
 @check("Required env vars are set", critical=True)
-def check_env_vars():
+def check_env_vars() -> None:
     required = ["GCP_PROJECT_ID", "BQ_DATASET", "NEWSAPI_KEY", "YOUTUBE_API_KEY"]
     missing = [var for var in required if not os.environ.get(var)]
     if missing:
@@ -63,7 +67,7 @@ def check_env_vars():
 
 
 @check("NewsAPI key is valid", critical=True)
-def check_newsapi():
+def check_newsapi() -> None:
     key = os.environ.get("NEWSAPI_KEY", "")
     resp = requests.get(
         "https://newsapi.org/v2/top-headlines",
@@ -81,7 +85,7 @@ def check_newsapi():
 
 
 @check("YouTube API key is valid", critical=True)
-def check_youtube():
+def check_youtube() -> None:
     key = os.environ.get("YOUTUBE_API_KEY", "")
     resp = requests.get(
         "https://www.googleapis.com/youtube/v3/search",
@@ -103,7 +107,7 @@ def check_youtube():
 
 
 @check("BigQuery dataset is reachable", critical=True)
-def check_bigquery():
+def check_bigquery() -> None:
     from google.cloud import bigquery
 
     project = os.environ.get("GCP_PROJECT_ID", "")
@@ -117,7 +121,7 @@ def check_bigquery():
 
 
 @check("Slack webhook is reachable", critical=False)
-def check_slack():
+def check_slack() -> None:
     url = os.environ.get("SLACK_WEBHOOK_URL", "")
     if not url:
         raise RuntimeError("SLACK_WEBHOOK_URL not set — alerts will be skipped")
@@ -130,7 +134,7 @@ def check_slack():
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 
-def main():
+def main() -> None:
     log.info("Starting preflight checks...")
     log.info("─" * 50)
 
