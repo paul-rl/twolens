@@ -50,6 +50,9 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Preflight checks
+        run: python src/preflight.py
+
       - name: Run pipeline
         run: |
           python src/main.py \

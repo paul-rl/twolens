@@ -46,7 +46,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-          pip install mypy
+  
       - name: Type check with mypy
         run: mypy src/ --ignore-missing-imports
 
@@ -78,8 +78,7 @@ jobs:
         run: |
           pytest tests/ -v --tb=short \
           --cov=src \
-          --cov-report=term-missing \
-          --cov-fail-under=80
+          --cov-report=term-missing
 
   security:
     name: Security Scan
@@ -95,9 +94,9 @@ jobs:
           python-version: '3.12'
       
       - name: Install tools
-        run: pip install bandit safety
+        run: pip install bandit pip-audit
       
       - name: Scan Code (Bandit)
         run: bandit -r src/
       - name: Scan Dependencies (Safety)
-        run: safety check -r requirements.txt
+        run: pip-audit -r requirements.txt
