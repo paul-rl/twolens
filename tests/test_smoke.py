@@ -5,12 +5,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_schema_file_exists():
+def test_schema_file_exists() -> None:
     """schema.sql must be present at repo root."""
     assert (REPO_ROOT / "schema.sql").is_file()
 
 
-def test_schema_contains_all_tables():
+def test_schema_contains_all_tables() -> None:
     """All 7 TwoLens tables must be defined in schema.sql."""
     schema = (REPO_ROOT / "schema.sql").read_text()
     expected_tables = [
@@ -26,12 +26,12 @@ def test_schema_contains_all_tables():
         assert f"twolens.{table}" in schema, f"Missing table: {table}"
 
 
-def test_env_example_exists():
+def test_env_example_exists() -> None:
     """.env.example must be present so new contributors can set up."""
     assert (REPO_ROOT / ".env.example").is_file()
 
 
-def test_env_example_has_required_keys():
+def test_env_example_has_required_keys() -> None:
     """All required environment variables must be documented in .env.example."""
     env_example = (REPO_ROOT / ".env.example").read_text()
     required_keys = [
