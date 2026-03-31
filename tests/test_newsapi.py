@@ -16,7 +16,6 @@ from src.clients.newsapi import (
 from src.clients.newsapi_models import FetchResult, NewsApiResponse, NewsArticle, NewsSource
 from src.config import Config
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -124,7 +123,7 @@ class TestNewsArticleModel:
         article = NewsArticle(
             source=NewsSource(id="bbc", name="BBC News"),
             title="Test Article",
-            publishedAt="2026-03-30T14:00:00Z",
+            published_at="2026-03-30T14:00:00Z",
         )
         assert article.is_valid
         assert article.source.name == "BBC News"
@@ -143,8 +142,8 @@ class TestNewsArticleModel:
         assert not article.is_valid
 
     def test_bad_timestamp_becomes_none(self):
-        article = NewsArticle(title="Test", publishedAt="not-a-date")
-        assert article.publishedAt is None
+        article = NewsArticle(title="Test", published_at="not-a-date")
+        assert article.published_at is None
 
     def test_missing_fields_use_defaults(self):
         article = NewsArticle(title="Minimal Article")
@@ -357,7 +356,7 @@ def test_brand_mentions_from_news_articles(sample_raw_response):
     assert mentions[0]["source_platform"] == "newsapi"
     assert mentions[0]["mention_type"] == "news_article"
     assert mentions[0]["mention_id"].startswith("news_")
-    assert mentions[0]["engagement_score"] == 0
+    assert mentions[0]["engagement_score"] == None
     assert mentions[0]["source_detail"] == "BBC News"
 
 

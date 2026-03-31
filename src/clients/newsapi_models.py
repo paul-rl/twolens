@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 log = logging.getLogger(__name__)
 
@@ -69,8 +69,8 @@ class NewsArticle(BaseModel):
     title: str = ""
     description: str | None = None
     url: HttpUrl | str | None = None
-    urlToImage: HttpUrl | str | None = None
-    publishedAt: datetime | None = None
+    url_to_image: HttpUrl | str | None = Field(default=None, alias="urlToImage")
+    published_at: datetime | None = Field(default=None, alias="publishedAt")
     content: str | None = None
 
     @field_validator("title", mode="before")
@@ -81,7 +81,7 @@ class NewsArticle(BaseModel):
             return ""
         return v.strip()
 
-    @field_validator("publishedAt", mode="before")
+    @field_validator("published_at", mode="before")
     @classmethod
     def validate_timestamp(cls, v: str | None) -> datetime | None:
         """Verify timestamp is parseable ISO 8601. Pass through if valid, None if not."""
@@ -93,7 +93,7 @@ class NewsArticle(BaseModel):
             log.warning(f"NewsAPI: Malformed timestamp '{v}'. Error: {e}")
             return None
 
-    @field_validator("url", "urlToImage", mode="before")
+    @field_validator("url", "url_to_image", mode="before")
     @classmethod
     def validate_urls(cls, v: str | None) -> str | None:
         """Ensure URLs are somewhat valid, log and nullify if they are complete garbage."""
@@ -113,8 +113,7 @@ class NewsArticle(BaseModel):
     def extra_fields(self) -> set[str]:
         """Return field names present in the API response but not in our model."""
         # Pydantic stores extra fields in __pydantic_extra__
-        extra = set(self.__pydantic_extra__.keys()) if self.__pydantic_extra__ else set()
-        return extra
+        return set(self.__pydantic_extra__.keys()) if self.__pydantic_extra__ else set()
 
 
 class NewsApiResponse(BaseModel):
@@ -128,7 +127,7 @@ class NewsApiResponse(BaseModel):
     model_config = {"extra": "allow"}
 
     status: str = "unknown"
-    totalResults: int = 0
+    total_results: int = Field(default=0, alias="totalResults")
     articles: list[NewsArticle] = Field(default_factory=list)
 
     @property
@@ -139,8 +138,7 @@ class NewsApiResponse(BaseModel):
     @property
     def extra_fields(self) -> set[str]:
         """Top-level fields present in API response but not in our model."""
-        extra = set(self.__pydantic_extra__.keys()) if self.__pydantic_extra__ else set()
-        return extra
+        return set(self.__pydantic_extra__.keys()) if self.__pydantic_extra__ else set()
 
     @property
     def all_article_fields(self) -> set[str]:

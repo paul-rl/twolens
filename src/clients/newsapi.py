@@ -17,7 +17,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
@@ -202,12 +202,12 @@ def transform_to_news_articles(
     Transform validated NewsApiResponse into news_articles rows.
     Only processes articles that passed Pydantic validation and is_valid check.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     rows = []
 
     for article in parsed.valid_articles:
         source_name = article.source.name
-        published_at = article.publishedAt or ""
+        published_at = article.published_at or ""
 
         rows.append({
             "article_id": _generate_article_id(source_name, published_at, article.title),
@@ -218,8 +218,8 @@ def transform_to_news_articles(
             "description": article.description or "",
             "content": article.content or "",
             "url": str(article.url) if article.url else "",
-            "image_url": str(article.urlToImage) if article.urlToImage else "",
-            "published_at": article.publishedAt.isoformat() if article.publishedAt else None,
+            "image_url": str(article.url_to_image) if article.url_to_image else "",
+            "published_at": article.published_at.isoformat() if article.published_at else None,
             "query_term": query_term,
             "captured_at": now,
             "pipeline_run_id": pipeline_run_id,
@@ -278,7 +278,7 @@ def build_raw_response_row(
         "response_body": json.dumps(result.raw_response)[:500_000],
         "response_hash": response_hash,
         "http_status": result.http_status,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
         "pipeline_run_id": pipeline_run_id,
     }
 
@@ -306,5 +306,5 @@ def build_error_row(
         "response_snippet": result.response_snippet,
         "severity": "critical" if result.error_type == "auth_failure" else "warning",
         "resolved": False,
-        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "occurred_at": datetime.now(UTC).isoformat(),
     }
