@@ -16,7 +16,9 @@ import sys
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+
 import requests
+from requests import Response
 
 # Type alias for the functions being decorated
 F = TypeVar("F", bound=Callable[..., Any])
@@ -69,8 +71,8 @@ def check_env_vars() -> None:
 
 @check("NewsAPI key is valid", critical=True)
 def check_newsapi() -> None:
-    key = os.environ.get("NEWSAPI_KEY", "")
-    resp = requests.get(
+    key: str = os.environ.get("NEWSAPI_KEY", "")
+    resp: Response = requests.get(
         "https://newsapi.org/v2/top-headlines",
         params={"apiKey": key, "country": "us", "pageSize": 1},
         timeout=10,
@@ -87,15 +89,15 @@ def check_newsapi() -> None:
 
 @check("YouTube API key is valid", critical=True)
 def check_youtube() -> None:
-    key = os.environ.get("YOUTUBE_API_KEY", "")
-    resp = requests.get(
+    key: str = os.environ.get("YOUTUBE_API_KEY", "")
+    resp: Response = requests.get(
         "https://www.googleapis.com/youtube/v3/search",
         params={"key": key, "part": "snippet", "q": "test", "maxResults": 1, "type": "video"},
         timeout=10,
     )
     if resp.status_code == 403:
-        data = resp.json()
-        reason = data.get("error", {}).get("errors", [{}])[0].get("reason", "unknown")
+        data: dict[str, Any] = resp.json()
+        reason: str = data.get("error", {}).get("errors", [{}])[0].get("reason", "unknown")
         if reason == "quotaExceeded":
             raise RuntimeError("YouTube API daily quota already exhausted")
         raise PermissionError(f"YouTube API key rejected: {reason}")
@@ -123,11 +125,11 @@ def check_bigquery() -> None:
 
 @check("Slack webhook is reachable", critical=False)
 def check_slack() -> None:
-    url = os.environ.get("SLACK_WEBHOOK_URL", "")
+    url: str = os.environ.get("SLACK_WEBHOOK_URL", "")
     if not url:
         raise RuntimeError("SLACK_WEBHOOK_URL not set — alerts will be skipped")
     # HEAD request to verify the webhook URL is valid without posting a message
-    resp = requests.head(url, timeout=10)
+    resp: Response = requests.head(url, timeout=10)
     if resp.status_code >= 400:
         raise RuntimeError(f"Slack webhook returned HTTP {resp.status_code}")
 
