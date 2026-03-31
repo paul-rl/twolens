@@ -334,7 +334,11 @@ def test_transform_skips_removed_articles():
     raw = {
         "articles": [
             {"source": {"name": "X"}, "title": "[Removed]", "publishedAt": "2026-03-30T14:00:00Z"},
-            {"source": {"name": "Y"}, "title": "Real Article", "publishedAt": "2026-03-30T14:00:00Z"},
+            {
+                "source": {"name": "Y"},
+                "title": "Real Article",
+                "publishedAt": "2026-03-30T14:00:00Z",
+            },
         ],
     }
     parsed = NewsApiResponse.model_validate(raw)

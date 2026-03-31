@@ -37,7 +37,7 @@ class FetchResult:
     raw_response: dict[str, Any]
     http_status: int | None = None
     is_error: bool = False
-    error_type: str | None = None      # 'timeout' | 'rate_limit' | 'auth_failure' | etc.
+    error_type: str | None = None  # 'timeout' | 'rate_limit' | 'auth_failure' | etc.
     error_message: str | None = None
     response_snippet: str | None = None  # first 1000 chars on unexpected responses
 

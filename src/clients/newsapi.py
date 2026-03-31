@@ -209,21 +209,23 @@ def transform_to_news_articles(
         source_name = article.source.name
         published_at = article.published_at or ""
 
-        rows.append({
-            "article_id": _generate_article_id(source_name, published_at, article.title),
-            "source_name": source_name,
-            "source_id": article.source.id,
-            "author": article.author,
-            "title": article.title,
-            "description": article.description or "",
-            "content": article.content or "",
-            "url": str(article.url) if article.url else "",
-            "image_url": str(article.url_to_image) if article.url_to_image else "",
-            "published_at": article.published_at.isoformat() if article.published_at else None,
-            "query_term": query_term,
-            "captured_at": now,
-            "pipeline_run_id": pipeline_run_id,
-        })
+        rows.append(
+            {
+                "article_id": _generate_article_id(source_name, published_at, article.title),
+                "source_name": source_name,
+                "source_id": article.source.id,
+                "author": article.author,
+                "title": article.title,
+                "description": article.description or "",
+                "content": article.content or "",
+                "url": str(article.url) if article.url else "",
+                "image_url": str(article.url_to_image) if article.url_to_image else "",
+                "published_at": article.published_at.isoformat() if article.published_at else None,
+                "query_term": query_term,
+                "captured_at": now,
+                "pipeline_run_id": pipeline_run_id,
+            }
+        )
 
     log.info(f"NewsAPI transform: {len(rows)} rows for '{query_term}'")
     return rows
@@ -238,24 +240,26 @@ def transform_to_brand_mentions(
     mentions = []
 
     for article in news_articles:
-        mentions.append({
-            "mention_id": f"news_{article['article_id']}",
-            "source_platform": "newsapi",
-            "source_record_id": article["article_id"],
-            "query_term": article["query_term"],
-            "title": article["title"],
-            "body": article.get("content") or article.get("description") or "",
-            "author": article.get("author"),
-            "url": article.get("url"),
-            "published_at": article.get("published_at"),
-            "engagement_score": None,
-            "like_count": None,
-            "comment_count": None,
-            "source_detail": article.get("source_name", "Unknown"),
-            "mention_type": "news_article",
-            "captured_at": article["captured_at"],
-            "pipeline_run_id": article["pipeline_run_id"],
-        })
+        mentions.append(
+            {
+                "mention_id": f"news_{article['article_id']}",
+                "source_platform": "newsapi",
+                "source_record_id": article["article_id"],
+                "query_term": article["query_term"],
+                "title": article["title"],
+                "body": article.get("content") or article.get("description") or "",
+                "author": article.get("author"),
+                "url": article.get("url"),
+                "published_at": article.get("published_at"),
+                "engagement_score": None,
+                "like_count": None,
+                "comment_count": None,
+                "source_detail": article.get("source_name", "Unknown"),
+                "mention_type": "news_article",
+                "captured_at": article["captured_at"],
+                "pipeline_run_id": article["pipeline_run_id"],
+            }
+        )
 
     return mentions
 
