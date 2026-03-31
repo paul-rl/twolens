@@ -16,7 +16,6 @@ import sys
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-
 import requests
 from requests import Response
 
