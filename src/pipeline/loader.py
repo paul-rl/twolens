@@ -95,6 +95,7 @@ class BigQueryLoader:
         returns an empty dict so the pipeline still runs — it just treats
         everything as a first observation.
         """
+        # nosec B608
         query = f"""
             SELECT api_source, endpoint, structure_hash
             FROM `{self._table_id("api_contracts")}`
