@@ -34,7 +34,7 @@ class Config:
 
     # API endpoints
     newsapi_base_url: str = "https://newsapi.org"
-    youtube_base_url: str = "https://www.googleapis.com/youtube"
+    youtube_base_url: str = "https://www.googleapis.com/"
 
     # Timeouts (seconds)
     request_timeout: int = 15

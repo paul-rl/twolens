@@ -9,7 +9,7 @@ Entry point for the pipeline. Runs the full cycle:
      b. Store raw response
      c. Check for schema drift
      d. Validate via Pydantic
-     e. Transform → structured + unified rows
+     e. Transform -> structured + unified rows
      f. Load into BigQuery
   3. Log errors
   4. Complete the pipeline run with summary stats
@@ -29,13 +29,30 @@ from pathlib import Path
 
 import requests
 
-from src.clients.newsapi import (
+from src.clients.newsapi.client import (
     build_error_row,
     build_raw_response_row,
     fetch_articles,
     transform_to_brand_mentions,
     transform_to_news_articles,
     validate_response,
+)
+from src.clients.youtube.client import (
+    build_error_row as yt_build_error_row,
+)
+from src.clients.youtube.client import (
+    build_raw_response_row as yt_build_raw_row,
+)
+from src.clients.youtube.client import (
+    estimate_quota_used,
+    fetch_search,
+    fetch_video_details,
+    transform_to_youtube_videos,
+    validate_search_response,
+    validate_video_response,
+)
+from src.clients.youtube.client import (
+    transform_to_brand_mentions as yt_to_mentions,
 )
 from src.config import Config, load_config
 from src.pipeline.drift import (
@@ -139,21 +156,26 @@ def run_newsapi(
         if total_results == 0:
             log.info(f"NewsAPI: No articles found for '{term}'. Skipping schema drift check.")
         else:
-            drift_detected = check_drift(response_hash, known_hashes, "newsapi", "/v2/everything")
-
-            if drift_detected:
-                key_paths = extract_key_paths(result.raw_response)
-                contract_row = build_contract_row(
-                    "newsapi", "/v2/everything", response_hash, key_paths, pipeline_run_id
+            if not result.raw_response.get("articles"):
+                log.info(f"NewsAPI: No items found for '{term}'. Skipping search drift check.")
+            else:
+                drift_detected = check_drift(
+                    response_hash, known_hashes, "newsapi", "/v2/everything"
                 )
-                # Check if this is an update to an existing contract
-                lookup_key = "newsapi:/v2/everything"
-                if lookup_key in known_hashes:
-                    contract_row["drift_from"] = known_hashes[lookup_key]
 
-                if not dry_run:
-                    loader.insert_api_contracts([contract_row])
-                known_hashes[lookup_key] = response_hash
+                if drift_detected:
+                    key_paths = extract_key_paths(result.raw_response)
+                    contract_row = build_contract_row(
+                        "newsapi", "/v2/everything", response_hash, key_paths, pipeline_run_id
+                    )
+                    # Check if this is an update to an existing contract
+                    lookup_key = "newsapi:/v2/everything"
+                    if lookup_key in known_hashes:
+                        contract_row["drift_from"] = known_hashes[lookup_key]
+
+                    if not dry_run:
+                        loader.insert_api_contracts([contract_row])
+                    known_hashes[lookup_key] = response_hash
 
         # 5. Validate
         parsed, warnings = validate_response(result)
@@ -181,6 +203,159 @@ def run_newsapi(
 
         stats["articles"] += len(articles) - len(article_errors)
         stats["mentions"] += len(mentions)
+
+    return stats
+
+
+def run_youtube(
+    config: Config,
+    loader: BigQueryLoader,
+    pipeline_run_id: str,
+    known_hashes: dict[str, str],
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """
+    Run the YouTube pipeline for all query terms.
+    Two-step fetch: search.list → videos.list.
+
+    Returns a stats dict: {videos, mentions, errors, quota_used}
+    """
+    stats = {"videos": 0, "mentions": 0, "errors": 0, "quota_used": 0}
+
+    for term in config.query_terms:
+        log.info(f"=== YouTube: Processing '{term}' ===")
+
+        # ── Step 1: Search ────────────────────────────────────────────
+        search_result = fetch_search(config, term)
+
+        # Store raw search response
+        search_hash = (
+            hash_structure(search_result.raw_response) if search_result.raw_response else ""
+        )
+        raw_row = yt_build_raw_row(
+            search_result, "youtube/v3/search", term, search_hash, pipeline_run_id
+        )
+        if not dry_run:
+            loader.insert_raw_responses([raw_row])
+
+        # Handle search errors
+        if search_result.is_error:
+            error_row = yt_build_error_row(search_result, term, pipeline_run_id)
+            if error_row and not dry_run:
+                loader.insert_api_errors([error_row])
+            stats["errors"] += 1
+            fatal_errors = ["auth_failure", "quota_exceeded"]
+            if search_result.error_type in fatal_errors:
+                log.critical(
+                    f"YouTube: Fatal error ({search_result.error_type}) on '{term}'. "
+                    "Halting YouTube to prevent cascading failures."
+                )
+                break
+            log.error(
+                f"YouTube: Skipping '{term}' due to search error: {search_result.error_message}"
+            )
+            continue
+
+        # Drift check on search endpoint
+        drift_detected = check_drift(search_hash, known_hashes, "youtube", "search.list")
+        if drift_detected:
+            key_paths = extract_key_paths(search_result.raw_response)
+            contract_row = build_contract_row(
+                "youtube", "search.list", search_hash, key_paths, pipeline_run_id
+            )
+            lookup_key = "youtube:search.list"
+            if lookup_key in known_hashes:
+                contract_row["drift_from"] = known_hashes[lookup_key]
+            if not dry_run:
+                loader.insert_api_contracts([contract_row])
+            known_hashes[lookup_key] = search_hash
+
+        # Validate search response
+        search_parsed, search_warnings = validate_search_response(search_result)
+        if search_parsed is None:
+            stats["errors"] += 1
+            log.error(f"YouTube: Search validation failed for '{term}'")
+            continue
+
+        for w in search_warnings:
+            log.warning(w)
+
+        video_ids = search_parsed.video_ids
+        if not video_ids:
+            log.info(f"YouTube: No videos found for '{term}'")
+            stats["quota_used"] += estimate_quota_used(1, 0)
+            continue
+
+        # ── Step 2: Video Details ─────────────────────────────────────
+        details_result = fetch_video_details(config, video_ids)
+
+        # Store raw video details response
+        details_hash = (
+            hash_structure(details_result.raw_response) if details_result.raw_response else ""
+        )
+        raw_row = yt_build_raw_row(
+            details_result, "youtube/v3/videos", term, details_hash, pipeline_run_id
+        )
+        if not dry_run:
+            loader.insert_raw_responses([raw_row])
+
+        # Handle video details errors
+        if details_result.is_error:
+            error_row = yt_build_error_row(details_result, term, pipeline_run_id)
+            if error_row and not dry_run:
+                loader.insert_api_errors([error_row])
+            stats["errors"] += 1
+            if details_result.error_type in ("auth_failure", "quota_exceeded"):
+                log.critical(
+                    f"YouTube: Fatal error ({details_result.error_type}) on video details. "
+                    "Halting YouTube."
+                )
+                break
+            log.error(f"YouTube: Skipping '{term}' video details: {details_result.error_message}")
+            stats["quota_used"] += estimate_quota_used(1, 1)
+            continue
+
+        # Drift check on videos endpoint
+        drift_detected = check_drift(details_hash, known_hashes, "youtube", "videos.list")
+        if drift_detected:
+            key_paths = extract_key_paths(details_result.raw_response)
+            contract_row = build_contract_row(
+                "youtube", "videos.list", details_hash, key_paths, pipeline_run_id
+            )
+            lookup_key = "youtube:videos.list"
+            if lookup_key in known_hashes:
+                contract_row["drift_from"] = known_hashes[lookup_key]
+            if not dry_run:
+                loader.insert_api_contracts([contract_row])
+            known_hashes[lookup_key] = details_hash
+
+        # Validate video details
+        videos_parsed, video_warnings = validate_video_response(details_result)
+        if videos_parsed is None:
+            stats["errors"] += 1
+            log.error(f"YouTube: Video details validation failed for '{term}'")
+            stats["quota_used"] += estimate_quota_used(1, 1)
+            continue
+
+        for w in video_warnings:
+            log.warning(w)
+
+        # ── Transform & Load ──────────────────────────────────────────
+        videos = transform_to_youtube_videos(videos_parsed, term, pipeline_run_id)
+        mentions = yt_to_mentions(videos)
+
+        video_errors = []
+        if not dry_run:
+            video_errors = loader.insert_youtube_videos(videos)
+            mention_errors = loader.insert_brand_mentions(mentions)
+            if video_errors or mention_errors:
+                stats["errors"] += len(video_errors) + len(mention_errors)
+        else:
+            log.info(f"DRY RUN: Would insert {len(videos)} videos, {len(mentions)} mentions")
+
+        stats["videos"] += len(videos) - len(video_errors)
+        stats["mentions"] += len(mentions)
+        stats["quota_used"] += estimate_quota_used(1, 1)
 
     return stats
 
@@ -237,7 +412,9 @@ def main() -> None:
     total_errors += news_stats["errors"]
 
     # Lens 2: YouTube (TODO: next module)
-    youtube_records = 0
+    yt_stats = run_youtube(config, loader, run_id, known_hashes, dry_run=args.dry_run)
+    total_loaded += yt_stats["mentions"]
+    total_errors += yt_stats["errors"]
 
     # ─── Complete pipeline run ────────────────────────────────────────
     status = "success"
@@ -248,7 +425,8 @@ def main() -> None:
 
     notes = (
         f"NewsAPI: {news_stats['articles']} articles -> {news_stats['mentions']} mentions. "
-        f"Errors: {total_errors}"
+        f"YouTube: {yt_stats['videos']} videos -> {yt_stats['mentions']} mentions | "
+        f"Errors: {total_errors} | Quota: {yt_stats['quota_used']} units"
     )
 
     if not args.dry_run:
@@ -257,7 +435,7 @@ def main() -> None:
             started_at=started_at,
             status=status,
             newsapi_records=news_stats["articles"],
-            youtube_records=youtube_records,
+            youtube_records=yt_stats["videos"],
             total_loaded=total_loaded,
             total_errors=total_errors,
             quota_used=0,
