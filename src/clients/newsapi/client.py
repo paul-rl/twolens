@@ -23,7 +23,7 @@ from typing import Any
 import requests
 from pydantic import ValidationError
 
-from src.clients.newsapi_models import FetchResult, NewsApiResponse
+from src.clients.newsapi.models import FetchResult, NewsApiResponse
 from src.config import Config
 
 log = logging.getLogger(__name__)
