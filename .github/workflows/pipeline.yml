@@ -56,7 +56,7 @@ jobs:
 
       - name: Run pipeline
         run: |
-          python src/main.py \
+          python -m src.main \
             ${{ github.event.inputs.query_terms && format('--query-terms "{0}"', github.event.inputs.query_terms) || '' }} \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             --trigger ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
