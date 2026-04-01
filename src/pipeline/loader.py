@@ -176,6 +176,7 @@ class BigQueryLoader:
         run_id: str,
         started_at: datetime,
         status: str,
+        trigger_type: str,
         newsapi_records: int = 0,
         youtube_records: int = 0,
         total_loaded: int = 0,
@@ -198,7 +199,7 @@ class BigQueryLoader:
             "run_id": run_id,
             "started_at": started_at.isoformat(),
             "completed_at": now.isoformat(),
-            "trigger_type": "scheduled",  # will be overwritten by caller if needed
+            "trigger_type": trigger_type,  # will be overwritten by caller if needed
             "status": status,
             "newsapi_records": newsapi_records,
             "youtube_records": youtube_records,
