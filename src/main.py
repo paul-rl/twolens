@@ -530,25 +530,12 @@ def main() -> None:
             total_errors=total_errors,
             quota_used=yt_stats["quota_used"],
             notes=notes,
+            trigger_type=args.trigger,
         )
 
     log.info(f"Pipeline complete | status={status} | {notes}")
 
     # ─── Send Slack notifications ─────────────────────────────────────
-
-    # Always notify on completion (success, partial, or failed)
-    notify_pipeline_result(
-        config,
-        run_id=run_id,
-        status=status,
-        news_stats=news_stats,
-        yt_stats=yt_stats,
-        duration_seconds=duration,
-    )
-
-    # Send ONE drift notification if any actual structural changes occurred
-    # (first observations are baselines — logged locally, not alerted)
-    notify_drift_summary(config, drift_events, run_id=run_id)
 
     # Check cumulative YouTube quota for the day and warn if close to limit.
     # Prior runs' usage comes from BigQuery; add this run's contribution.
@@ -557,6 +544,21 @@ def main() -> None:
     else:
         prior_quota = 0
     cumulative_quota = prior_quota + yt_stats["quota_used"]
+
+    # Always notify on completion (success, partial, or failed)
+    notify_pipeline_result(
+        config,
+        run_id=run_id,
+        status=status,
+        news_stats=news_stats,
+        yt_stats=yt_stats,
+        quota=cumulative_quota,
+        duration_seconds=duration,
+    )
+
+    # Send ONE drift notification if any actual structural changes occurred
+    # (first observations are baselines — logged locally, not alerted)
+    notify_drift_summary(config, drift_events, run_id=run_id)
 
     notify_quota_warning(
         config,

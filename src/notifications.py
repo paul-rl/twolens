@@ -128,6 +128,7 @@ def notify_pipeline_result(
     status: str,
     news_stats: dict[str, int],
     yt_stats: dict[str, int],
+    quota: int,
     duration_seconds: float | None = None,
 ) -> bool:
     """
@@ -165,11 +166,10 @@ def notify_pipeline_result(
     # Add quota info if YouTube ran
     quota_used = yt_stats.get("quota_used", 0)
     if quota_used > 0:
-        quota_pct = (quota_used / YOUTUBE_QUOTA_LIMIT) * 100
+        quota_pct = (quota / YOUTUBE_QUOTA_LIMIT) * 100
         blocks.append(
             _section_block(
-                f"*YouTube Quota:* {quota_used:,} / {YOUTUBE_QUOTA_LIMIT:,} units "
-                f"({quota_pct:.1f}% used today)"
+                f"*YouTube Quota:* {quota_used:,} units used({quota_pct:.1f}% used today in total)"
             )
         )
 
