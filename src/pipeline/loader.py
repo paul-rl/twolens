@@ -95,12 +95,12 @@ class BigQueryLoader:
         returns an empty dict so the pipeline still runs — it just treats
         everything as a first observation.
         """
-        # nosec B608
+
         query = f"""
             SELECT api_source, endpoint, structure_hash
             FROM `{self._table_id("api_contracts")}`
             WHERE is_current = TRUE
-        """
+        """  # nosec B608
 
         try:
             results = self.client.query(query).result()
