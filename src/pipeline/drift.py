@@ -19,27 +19,34 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-def extract_key_paths(obj: Any, prefix: str = "") -> list[str]:
+DRIFT_IGNORE_KEYS = {"nextPageToken", "prevPageToken", "etag", "regionCode"}
+
+
+def extract_key_paths(obj: Any, prefix: str = "", ignore: set[str] | None = None) -> list[str]:
     """
     Recursively extract all key paths from a JSON structure.
 
-    Examples:
-      {"a": 1, "b": {"c": 2}}        -> ["a", "b.c"]
-      {"items": [{"x": 1, "y": 2}]}  -> ["items[].x", "items[].y"]
-
-    Only structure is captured, not values. This means two responses
-    with different data but the same shape produce the same hash.
+    Args:
+        obj: The JSON object to extract paths from.
+        prefix: Current key path prefix (used in recursion).
+        ignore: Set of top-level or leaf key names to exclude from paths.
+                Used to filter out fields that vary between requests without
+                representing actual schema changes (e.g. pagination tokens).
     """
+    if ignore is None:
+        ignore = DRIFT_IGNORE_KEYS
+
     paths = []
 
     if isinstance(obj, dict):
         for key, value in sorted(obj.items()):
+            if key in ignore:
+                continue
             full_key = f"{prefix}.{key}" if prefix else key
             if isinstance(value, dict):
-                paths.extend(extract_key_paths(value, full_key))
+                paths.extend(extract_key_paths(value, full_key, ignore))
             elif isinstance(value, list) and value and isinstance(value[0], dict):
-                # Sample first element to get the shape of list items
-                paths.extend(extract_key_paths(value[0], f"{full_key}[]"))
+                paths.extend(extract_key_paths(value[0], f"{full_key}[]", ignore))
             else:
                 paths.append(full_key)
     return sorted(paths)

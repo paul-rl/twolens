@@ -13,7 +13,8 @@ from src.clients.newsapi.client import (
     transform_to_news_articles,
     validate_response,
 )
-from src.clients.newsapi.models import FetchResult, NewsApiResponse, NewsArticle, NewsSource
+from src.clients.newsapi.models import NewsApiResponse, NewsArticle, NewsSource
+from src.clients.shared.fetch_model import FetchResult
 from src.config import Config
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────

@@ -15,31 +15,11 @@ so validation errors are logged, not raised.
 """
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class FetchResult:
-    """
-    Structured return type for fetch_articles().
-
-    Carries the raw response, HTTP metadata, and error info in one object
-    so downstream functions (raw storage, drift detection, transform) each
-    get what they need without magic dict keys.
-    """
-
-    raw_response: dict[str, Any]
-    http_status: int | None = None
-    is_error: bool = False
-    error_type: str | None = None  # 'timeout' | 'rate_limit' | 'auth_failure' | etc.
-    error_message: str | None = None
-    response_snippet: str | None = None  # first 1000 chars on unexpected responses
 
 
 class NewsSource(BaseModel):
