@@ -33,8 +33,8 @@ class Config:
     max_results_per_query: int = 25
 
     # API endpoints
-    newsapi_base_url: str = "https://newsapi.org/v2"
-    youtube_base_url: str = "https://www.googleapis.com/youtube/v3"
+    newsapi_base_url: str = "https://newsapi.org"
+    youtube_base_url: str = "https://www.googleapis.com/youtube"
 
     # Timeouts (seconds)
     request_timeout: int = 15
