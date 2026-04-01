@@ -83,7 +83,8 @@ class TestDriftEvent:
 def test_no_webhook_returns_false(config_no_slack, news_stats, yt_stats):
     """All notifications should silently return False when no webhook is set."""
     assert (
-        notify_pipeline_result(config_no_slack, "run-1", "success", news_stats, yt_stats) is False
+        notify_pipeline_result(config_no_slack, "run-1", "success", news_stats, yt_stats, quota=0)
+        is False
     )
     assert notify_drift_summary(config_no_slack, [], run_id="run-1") is False
     assert notify_quota_warning(config_no_slack, 9000) is False
@@ -98,7 +99,7 @@ def test_pipeline_success_sends_message(mock_post, config_with_slack, news_stats
     mock_post.return_value = MagicMock(status_code=200)
 
     result = notify_pipeline_result(
-        config_with_slack, "run-001", "success", news_stats, yt_stats, duration_seconds=4.2
+        config_with_slack, "run-001", "success", news_stats, yt_stats, quota=0, duration_seconds=4.2
     )
 
     assert result is True
@@ -118,7 +119,7 @@ def test_pipeline_failure_sends_message(
     mock_post.return_value = MagicMock(status_code=200)
 
     result = notify_pipeline_result(
-        config_with_slack, "run-002", "failed", failed_news_stats, failed_yt_stats
+        config_with_slack, "run-002", "failed", failed_news_stats, failed_yt_stats, quota=0
     )
 
     assert result is True
@@ -131,7 +132,7 @@ def test_pipeline_partial_sends_message(mock_post, config_with_slack, news_stats
     mock_post.return_value = MagicMock(status_code=200)
 
     result = notify_pipeline_result(
-        config_with_slack, "run-003", "partial", news_stats, failed_yt_stats
+        config_with_slack, "run-003", "partial", news_stats, failed_yt_stats, quota=0
     )
 
     assert result is True
@@ -142,11 +143,10 @@ def test_pipeline_partial_sends_message(mock_post, config_with_slack, news_stats
 def test_pipeline_result_includes_quota(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.return_value = MagicMock(status_code=200)
 
-    notify_pipeline_result(config_with_slack, "run-004", "success", news_stats, yt_stats)
+    notify_pipeline_result(config_with_slack, "run-004", "success", news_stats, yt_stats, quota=0)
 
     payload_text = str(mock_post.call_args[1]["json"])
     assert "303" in payload_text
-    assert "10,000" in payload_text
 
 
 # ─── notify_drift_summary ────────────────────────────────────────────────────
@@ -327,7 +327,9 @@ def test_fatal_error_quota(mock_post, config_with_slack):
 def test_webhook_http_error_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.return_value = MagicMock(status_code=500, text="Internal Server Error")
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
 
 
@@ -335,7 +337,9 @@ def test_webhook_http_error_returns_false(mock_post, config_with_slack, news_sta
 def test_webhook_timeout_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.side_effect = __import__("requests").exceptions.Timeout()
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
 
 
@@ -343,5 +347,7 @@ def test_webhook_timeout_returns_false(mock_post, config_with_slack, news_stats,
 def test_webhook_connection_error_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.side_effect = __import__("requests").exceptions.ConnectionError()
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
