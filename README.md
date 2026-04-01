@@ -93,6 +93,133 @@ Seven tables organized into four layers. Full DDL is in [`schema.sql`](schema.sq
 
 Partitioning is by date on timestamp columns; clustering is on the fields you'd filter most (api_source, query_term, source_platform). These cost nothing on free tier and improve query performance.
 
+```mermaid
+erDiagram
+    %% 1. RAW LAYER
+    RAW_API_RESPONSES {
+        STRING response_id PK "UUID"
+        STRING api_source "newsapi | youtube"
+        STRING endpoint 
+        JSON request_params
+        STRING response_body
+        STRING response_hash "Used for drift detection"
+        INT64 http_status
+        TIMESTAMP captured_at
+        STRING pipeline_run_id FK
+    }
+
+    %% 2. STRUCTURED LAYER
+    NEWS_ARTICLES {
+        STRING article_id PK
+        STRING source_name
+        STRING source_id
+        STRING author
+        STRING title
+        STRING description
+        STRING content
+        STRING url
+        STRING image_url
+        TIMESTAMP published_at
+        STRING query_term
+        TIMESTAMP captured_at
+        STRING pipeline_run_id FK
+    }
+
+    YOUTUBE_VIDEOS {
+        STRING video_id PK
+        STRING channel_id
+        STRING channel_title
+        STRING title
+        STRING description
+        TIMESTAMP published_at
+        STRING tags
+        STRING category_id
+        INT64 view_count
+        INT64 like_count
+        INT64 comment_count
+        STRING duration
+        STRING thumbnail_url
+        STRING url
+        STRING query_term
+        TIMESTAMP captured_at
+        STRING pipeline_run_id FK
+    }
+
+    %% 3. UNIFIED LAYER
+    BRAND_MENTIONS {
+        STRING mention_id PK "news_{hash} | yt_{id}"
+        STRING source_platform "newsapi | youtube"
+        STRING source_record_id FK "original ID"
+        STRING query_term
+        STRING title
+        STRING body
+        STRING author
+        STRING url
+        TIMESTAMP published_at
+        INT64 engagement_score "youtube: views | news: 0"
+        INT64 like_count
+        INT64 comment_count
+        STRING source_detail "news: source | yt: channel"
+        STRING mention_type "news_article | youtube_video"
+        TIMESTAMP captured_at
+        STRING pipeline_run_id FK
+    }
+
+    %% 4. OBSERVABILITY LAYER
+    PIPELINE_RUNS {
+        STRING run_id PK "UUID"
+        TIMESTAMP started_at
+        TIMESTAMP completed_at
+        STRING trigger_type
+        STRING status
+        INT64 newsapi_records
+        INT64 youtube_records
+        INT64 total_loaded
+        INT64 total_errors
+        FLOAT64 duration_seconds
+        INT64 quota_used
+        STRING notes
+    }
+
+    API_ERRORS {
+        STRING error_id PK "UUID"
+        STRING pipeline_run_id FK
+        STRING api_source
+        STRING error_type
+        INT64 http_status
+        STRING error_message
+        JSON request_context
+        STRING response_snippet
+        STRING severity
+        BOOL resolved
+        TIMESTAMP occurred_at
+    }
+
+    API_CONTRACTS {
+        STRING contract_id PK "UUID"
+        STRING api_source
+        STRING endpoint
+        STRING structure_hash "SHA-256"
+        STRING structure_keys "JSON array of paths"
+        TIMESTAMP first_seen_at
+        TIMESTAMP last_seen_at
+        BOOL is_current
+        STRING drift_from "Previous contract_id"
+        STRING detected_by_run FK
+    }
+
+    %% RELATIONSHIPS (Data Flow & Traceability)
+    PIPELINE_RUNS ||--o{ API_ERRORS : "logs"
+    PIPELINE_RUNS ||--o{ API_CONTRACTS : "observes schema drift"
+
+    RAW_API_RESPONSES ||--o| NEWS_ARTICLES : "parsed into"
+    RAW_API_RESPONSES ||--o| YOUTUBE_VIDEOS : "parsed into"
+
+    NEWS_ARTICLES ||--|| BRAND_MENTIONS : "unified as"
+    YOUTUBE_VIDEOS ||--|| BRAND_MENTIONS : "unified as"
+```
+_Note: All tables carry `pipeline_run_id` for full run-level traceability_
+
 ## API Resilience & Schema Drift Detection
 
 The assignment asks for code that doesn't break when API response formats change. TwoLens goes further: it **detects, records, and alerts** on structural changes automatically.
