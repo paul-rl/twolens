@@ -83,3 +83,64 @@ def test_load_known_contracts_table_not_found(mock_client_class, config):
     known = loader.load_known_contracts()
 
     assert known == {}
+
+
+# ─── get_daily_quota_used ─────────────────────────────────────────────────────
+
+
+@patch("src.pipeline.loader.bigquery.Client")
+def test_get_daily_quota_returns_sum(mock_client_class, config):
+    """Should return total quota_used across all runs today."""
+    from src.pipeline.loader import BigQueryLoader
+
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+
+    mock_row = MagicMock()
+    mock_row.total = 606  # two runs at 303 each
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = [mock_row]
+    mock_client.query.return_value = mock_query_job
+
+    loader = BigQueryLoader(config)
+    total = loader.get_daily_quota_used()
+
+    assert total == 606
+
+    query_arg = mock_client.query.call_args[0][0]
+    assert "CURRENT_DATE()" in query_arg
+    assert "status != 'running'" in query_arg
+
+
+@patch("src.pipeline.loader.bigquery.Client")
+def test_get_daily_quota_no_runs_today(mock_client_class, config):
+    """No runs today should return 0."""
+    from src.pipeline.loader import BigQueryLoader
+
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+
+    mock_row = MagicMock()
+    mock_row.total = 0
+
+    mock_query_job = MagicMock()
+    mock_query_job.result.return_value = [mock_row]
+    mock_client.query.return_value = mock_query_job
+
+    loader = BigQueryLoader(config)
+    assert loader.get_daily_quota_used() == 0
+
+
+@patch("src.pipeline.loader.bigquery.Client")
+def test_get_daily_quota_table_missing(mock_client_class, config):
+    """If pipeline_runs doesn't exist yet, return 0 (don't crash)."""
+    from src.pipeline.loader import BigQueryLoader
+
+    mock_client = MagicMock()
+    mock_client_class.return_value = mock_client
+
+    mock_client.query.side_effect = Exception("Not found: Table test-project.twolens.pipeline_runs")
+
+    loader = BigQueryLoader(config)
+    assert loader.get_daily_quota_used() == 0

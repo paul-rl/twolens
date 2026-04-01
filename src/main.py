@@ -550,10 +550,17 @@ def main() -> None:
     # (first observations are baselines — logged locally, not alerted)
     notify_drift_summary(config, drift_events, run_id=run_id)
 
-    # Check YouTube quota and warn if getting close to limit
+    # Check cumulative YouTube quota for the day and warn if close to limit.
+    # Prior runs' usage comes from BigQuery; add this run's contribution.
+    if not args.dry_run:
+        prior_quota = loader.get_daily_quota_used()
+    else:
+        prior_quota = 0
+    cumulative_quota = prior_quota + yt_stats["quota_used"]
+
     notify_quota_warning(
         config,
-        quota_used=yt_stats["quota_used"],
+        quota_used=cumulative_quota,
         run_id=run_id,
     )
 
