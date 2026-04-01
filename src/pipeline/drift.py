@@ -24,8 +24,8 @@ def extract_key_paths(obj: Any, prefix: str = "") -> list[str]:
     Recursively extract all key paths from a JSON structure.
 
     Examples:
-      {"a": 1, "b": {"c": 2}}         → ["a", "b.c"]
-      {"items": [{"x": 1, "y": 2}]}   → ["items[].x", "items[].y"]
+      {"a": 1, "b": {"c": 2}}        -> ["a", "b.c"]
+      {"items": [{"x": 1, "y": 2}]}  -> ["items[].x", "items[].y"]
 
     Only structure is captured, not values. This means two responses
     with different data but the same shape produce the same hash.
@@ -86,7 +86,7 @@ def check_drift(
 
     Args:
         current_hash: SHA-256 of the current response structure
-        known_hashes: dict mapping endpoint → last known hash
+        known_hashes: dict mapping endpoint-> last known hash
         api_source: for logging
         endpoint: for logging and lookup
 
@@ -103,7 +103,7 @@ def check_drift(
     if current_hash != known:
         log.warning(
             f"Drift check [{api_source}]: Structure changed for {endpoint}! "
-            f"Previous hash: {known[:12]}... → New hash: {current_hash[:12]}..."
+            f"Previous hash: {known[:12]}... -> New hash: {current_hash[:12]}..."
         )
         return True
 
