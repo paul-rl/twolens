@@ -95,12 +95,11 @@ class BigQueryLoader:
         returns an empty dict so the pipeline still runs — it just treats
         everything as a first observation.
         """
-
         query = f"""
             SELECT api_source, endpoint, structure_hash
-            FROM `{self._table_id("api_contracts")}`
+            FROM `{self._table_id('api_contracts')}`
             WHERE is_current = TRUE
-        """  # nosec B608
+        """
 
         try:
             results = self.client.query(query).result()
@@ -113,8 +112,40 @@ class BigQueryLoader:
             return known
 
         except Exception as e:
-            log.warning(f"BigQuery: Could not load API contracts (table may not exist yet): {e}")
+            log.warning(
+                f"BigQuery: Could not load API contracts (table may not exist yet): {e}"
+            )
             return {}
+
+    def get_daily_quota_used(self) -> int:
+        """
+        Sum YouTube API quota consumed across all runs today.
+
+        Returns the cumulative units used so far, so the pipeline can
+        check whether the NEXT run would push past the daily limit.
+
+        Note: BigQuery streaming inserts have a few minutes of buffer
+        before new rows are queryable. If two runs execute back-to-back
+        (e.g., manual run right after a scheduled one), the second may
+        not see the first's quota. At twice-daily frequency this is fine.
+        """
+        query = f"""
+            SELECT COALESCE(SUM(quota_used), 0) AS total
+            FROM `{self._table_id('pipeline_runs')}`
+            WHERE DATE(started_at) = CURRENT_DATE()
+              AND status != 'running'
+        """
+
+        try:
+            results = self.client.query(query).result()
+            row = next(iter(results), None)
+            total = int(row.total) if row else 0
+            log.info(f"BigQuery: YouTube quota used today (prior runs): {total} units")
+            return total
+
+        except Exception as e:
+            log.warning(f"BigQuery: Could not load daily quota (table may not exist yet): {e}")
+            return 0
 
     # ─── Pipeline Run Lifecycle ───────────────────────────────────────────
 
