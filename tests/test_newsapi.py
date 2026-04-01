@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.clients.newsapi import (
+from src.clients.newsapi.client import (
     _generate_article_id,
     build_error_row,
     build_raw_response_row,
@@ -13,7 +13,8 @@ from src.clients.newsapi import (
     transform_to_news_articles,
     validate_response,
 )
-from src.clients.newsapi_models import FetchResult, NewsApiResponse, NewsArticle, NewsSource
+from src.clients.newsapi.models import NewsApiResponse, NewsArticle, NewsSource
+from src.clients.shared.fetch_model import FetchResult
 from src.config import Config
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ class TestNewsApiResponseModel:
 # ─── Unit: fetch_articles ─────────────────────────────────────────────────────
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_success(mock_get, config, sample_raw_response):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -213,7 +214,7 @@ def test_fetch_articles_success(mock_get, config, sample_raw_response):
     assert result.raw_response["status"] == "ok"
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_auth_failure(mock_get, config):
     mock_resp = MagicMock()
     mock_resp.status_code = 401
@@ -226,7 +227,7 @@ def test_fetch_articles_auth_failure(mock_get, config):
     assert result.error_type == "auth_failure"
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_rate_limit(mock_get, config):
     mock_resp = MagicMock()
     mock_resp.status_code = 429
@@ -239,7 +240,7 @@ def test_fetch_articles_rate_limit(mock_get, config):
     assert result.error_type == "rate_limit"
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_schema_drift(mock_get, config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -255,7 +256,7 @@ def test_fetch_articles_schema_drift(mock_get, config):
     assert result.raw_response == {"status": "ok", "data": []}
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_timeout(mock_get, config):
     mock_get.side_effect = __import__("requests").exceptions.Timeout()
 
@@ -266,7 +267,7 @@ def test_fetch_articles_timeout(mock_get, config):
     assert result.error_type == "timeout"
 
 
-@patch("src.clients.newsapi.requests.get")
+@patch("src.clients.newsapi.client.requests.get")
 def test_fetch_articles_connection_error(mock_get, config):
     mock_get.side_effect = __import__("requests").exceptions.ConnectionError()
 
