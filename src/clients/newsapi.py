@@ -52,7 +52,7 @@ def fetch_articles(config: Config, query_term: str) -> dict[str, Any]:
     """
     params = {
         "apiKey": config.newsapi_key,
-        "q": query_term,
+        "q": f'"{query_term}"',
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": min(config.max_results_per_query, 100),
@@ -278,7 +278,9 @@ def build_raw_response_row(
         "response_id": uuid.uuid4().hex,
         "api_source": "newsapi",
         "endpoint": ENDPOINT,
-        "request_params": json.dumps({"q": query_term, "language": "en", "sortBy": "publishedAt"}),
+        "request_params": json.dumps(
+            {"q": f"{query_term}", "language": "en", "sortBy": "publishedAt"}
+        ),
         "response_body": json.dumps(result.raw_response)[:500_000],
         "response_hash": response_hash,
         "http_status": result.http_status,
