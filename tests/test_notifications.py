@@ -83,7 +83,8 @@ class TestDriftEvent:
 def test_no_webhook_returns_false(config_no_slack, news_stats, yt_stats):
     """All notifications should silently return False when no webhook is set."""
     assert (
-        notify_pipeline_result(config_no_slack, "run-1", "success", news_stats, yt_stats, quota=0) is False
+        notify_pipeline_result(config_no_slack, "run-1", "success", news_stats, yt_stats, quota=0)
+        is False
     )
     assert notify_drift_summary(config_no_slack, [], run_id="run-1") is False
     assert notify_quota_warning(config_no_slack, 9000) is False
@@ -326,7 +327,9 @@ def test_fatal_error_quota(mock_post, config_with_slack):
 def test_webhook_http_error_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.return_value = MagicMock(status_code=500, text="Internal Server Error")
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
 
 
@@ -334,7 +337,9 @@ def test_webhook_http_error_returns_false(mock_post, config_with_slack, news_sta
 def test_webhook_timeout_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.side_effect = __import__("requests").exceptions.Timeout()
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
 
 
@@ -342,5 +347,7 @@ def test_webhook_timeout_returns_false(mock_post, config_with_slack, news_stats,
 def test_webhook_connection_error_returns_false(mock_post, config_with_slack, news_stats, yt_stats):
     mock_post.side_effect = __import__("requests").exceptions.ConnectionError()
 
-    result = notify_pipeline_result(config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0)
+    result = notify_pipeline_result(
+        config_with_slack, "run-x", "success", news_stats, yt_stats, quota=0
+    )
     assert result is False
