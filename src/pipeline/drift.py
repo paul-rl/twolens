@@ -26,6 +26,12 @@ def extract_key_paths(obj: Any, prefix: str = "", ignore: set[str] | None = None
     """
     Recursively extract all key paths from a JSON structure.
 
+    For lists of dicts, unions the keys across ALL items — not just the
+    first one. This is critical for APIs like YouTube where optional fields
+    (tags, liveBroadcastContent, etc.) appear in some items but not others.
+    Sampling only items[0] would produce a different hash depending on which
+    item happens to be first, causing false drift on every run.
+
     Args:
         obj: The JSON object to extract paths from.
         prefix: Current key path prefix (used in recursion).
@@ -46,10 +52,44 @@ def extract_key_paths(obj: Any, prefix: str = "", ignore: set[str] | None = None
             if isinstance(value, dict):
                 paths.extend(extract_key_paths(value, full_key, ignore))
             elif isinstance(value, list) and value and isinstance(value[0], dict):
-                paths.extend(extract_key_paths(value[0], f"{full_key}[]", ignore))
+                # Union keys across ALL items in the list, not just [0].
+                # This produces a stable "superset schema" that doesn't
+                # change when optional fields appear or disappear per item.
+                merged = _merge_list_items(value)
+                paths.extend(extract_key_paths(merged, f"{full_key}[]", ignore))
             else:
                 paths.append(full_key)
     return sorted(paths)
+
+
+def _merge_list_items(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Merge a list of dicts into one dict that contains every key seen
+    in any item. For nested dicts, recurse. For conflicting types,
+    prefer dict > list > scalar so we capture the deepest structure.
+
+    Example:
+        [{"a": 1, "b": {"x": 1}}, {"a": 2, "c": 3, "b": {"x": 1, "y": 2}}]
+        → {"a": 1, "b": {"x": 1, "y": 2}, "c": 3}
+    """
+    merged: dict[str, Any] = {}
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            if key not in merged:
+                merged[key] = value
+            elif isinstance(value, dict) and isinstance(merged[key], dict):
+                # Both are dicts — recurse to union nested keys
+                merged[key] = _merge_list_items([merged[key], value])
+            elif isinstance(value, list) and value and isinstance(value[0], dict):
+                # Both are lists of dicts — merge the sublists
+                existing = merged[key] if isinstance(merged[key], list) else []
+                merged[key] = existing + value
+            # else: keep the existing value (we only care about structure, not values)
+
+    return merged
 
 
 def hash_structure(obj: dict[str, Any]) -> str:

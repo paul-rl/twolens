@@ -1,6 +1,7 @@
 """Tests for schema drift detection."""
 
 from src.pipeline.drift import (
+    _merge_list_items,
     build_contract_row,
     check_drift,
     extract_key_paths,
@@ -70,6 +71,135 @@ def test_null_value():
     """A null value is treated as a valid structural leaf node."""
     paths = extract_key_paths({"title": "Test", "description": None})
     assert paths == ["description", "title"]
+
+
+# ─── List item merging (the core fix) ─────────────────────────────────────────
+
+
+def test_list_unions_keys_across_items():
+    """Items with different optional fields should produce a superset of keys."""
+    data = {
+        "items": [
+            {"id": "a", "title": "Video A"},
+            {"id": "b", "title": "Video B", "tags": ["ai"]},
+        ]
+    }
+    paths = extract_key_paths(data)
+    assert "items[].id" in paths
+    assert "items[].title" in paths
+    assert "items[].tags" in paths  # from item[1], not in item[0]
+
+
+def test_list_unions_nested_dicts():
+    """Nested dicts should also be merged across items."""
+    data = {
+        "items": [
+            {"snippet": {"title": "A"}},
+            {"snippet": {"title": "B", "description": "desc"}},
+        ]
+    }
+    paths = extract_key_paths(data)
+    assert "items[].snippet.title" in paths
+    assert "items[].snippet.description" in paths  # only in item[1]
+
+
+def test_youtube_search_polymorphic():
+    """Simulate the actual YouTube problem: different videos have different optional fields."""
+    data = {
+        "kind": "youtube#searchListResponse",
+        "items": [
+            {
+                "id": {"videoId": "abc"},
+                "snippet": {
+                    "title": "Video A",
+                    "channelTitle": "Chan1",
+                    "liveBroadcastContent": "none",
+                },
+            },
+            {
+                "id": {"videoId": "def"},
+                "snippet": {
+                    "title": "Video B",
+                    "channelTitle": "Chan2",
+                    # liveBroadcastContent missing
+                    "thumbnails": {"default": {"url": "http://img.jpg"}},
+                },
+            },
+        ],
+    }
+    paths = extract_key_paths(data)
+    # Both items' fields should be present
+    assert "items[].snippet.liveBroadcastContent" in paths
+    assert "items[].snippet.thumbnails.default.url" in paths
+    assert "items[].snippet.title" in paths
+
+
+def test_hash_stable_regardless_of_item_order():
+    """The same items in different order should produce the same hash."""
+    item_a = {"id": "a", "title": "A", "tags": ["x"]}
+    item_b = {"id": "b", "title": "B", "extra_field": True}
+
+    data_order_1 = {"items": [item_a, item_b]}
+    data_order_2 = {"items": [item_b, item_a]}
+
+    assert hash_structure(data_order_1) == hash_structure(data_order_2)
+
+
+def test_hash_stable_across_different_query_terms():
+    """
+    The core scenario: YouTube search for 'Avenue Z' vs 'Anthropic' returns
+    different videos with different optional fields. The hash should be stable
+    if the UNION of fields is the same.
+    """
+    avenue_z_response = {
+        "items": [
+            {"id": {"videoId": "1"}, "snippet": {"title": "AZ vid", "tags": ["az"]}},
+            {"id": {"videoId": "2"}, "snippet": {"title": "AZ vid 2"}},
+        ]
+    }
+    anthropic_response = {
+        "items": [
+            {"id": {"videoId": "3"}, "snippet": {"title": "Anthro vid"}},
+            {"id": {"videoId": "4"}, "snippet": {"title": "Anthro vid 2", "tags": ["ai"]}},
+        ]
+    }
+    # Both responses have items with and without 'tags', so the superset is the same
+    assert hash_structure(avenue_z_response) == hash_structure(anthropic_response)
+
+
+# ─── _merge_list_items ────────────────────────────────────────────────────────
+
+
+def test_merge_simple():
+    items = [{"a": 1}, {"b": 2}, {"a": 3, "c": 4}]
+    merged = _merge_list_items(items)
+    assert set(merged.keys()) == {"a", "b", "c"}
+
+
+def test_merge_nested_dicts():
+    items = [
+        {"snippet": {"title": "A"}},
+        {"snippet": {"title": "B", "description": "D"}},
+    ]
+    merged = _merge_list_items(items)
+    assert "title" in merged["snippet"]
+    assert "description" in merged["snippet"]
+
+
+def test_merge_skips_non_dicts():
+    items = [{"a": 1}, "not a dict", {"b": 2}]
+    merged = _merge_list_items(items)
+    assert set(merged.keys()) == {"a", "b"}
+
+
+def test_merge_empty_list():
+    assert _merge_list_items([]) == {}
+
+
+def test_merge_single_item():
+    items = [{"x": 1, "y": 2}]
+    merged = _merge_list_items(items)
+    assert merged == {"x": 1, "y": 2}
 
 
 # ─── hash_structure ───────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ Entry point for the pipeline. Runs the full cycle:
      f. Load into BigQuery
   3. Log errors
   4. Complete the pipeline run with summary stats
-  5. Send Slack notification on failure
+  5. Send Slack notifications (failure, partial, drift, quota)
 
 Usage:
   python src/main.py --trigger scheduled
@@ -26,8 +26,6 @@ import logging
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-
-import requests
 
 from src.clients.newsapi.client import (
     build_error_row,
@@ -55,6 +53,13 @@ from src.clients.youtube.client import (
     transform_to_brand_mentions as yt_to_mentions,
 )
 from src.config import Config, load_config
+from src.notifications import (
+    DriftEvent,
+    notify_drift_summary,
+    notify_fatal_error,
+    notify_pipeline_result,
+    notify_quota_warning,
+)
 from src.pipeline.drift import (
     build_contract_row,
     check_drift,
@@ -80,24 +85,6 @@ logging.basicConfig(
 log = logging.getLogger("twolens")
 
 
-# ─── Notifications ────────────────────────────────────────────────────────────
-
-
-def send_slack_alert(config: Config, message: str) -> None:
-    """Send a failure alert to Slack. Fails silently if webhook is not configured."""
-    if not config.slack_webhook_url:
-        log.warning("Slack webhook not configured — skipping alert")
-        return
-
-    try:
-        payload = {"text": f":rotating_light: *TwoLens Pipeline Alert*\n{message}"}
-        resp = requests.post(config.slack_webhook_url, json=payload, timeout=10)
-        if resp.status_code != 200:
-            log.error(f"Slack alert failed: HTTP {resp.status_code}")
-    except Exception as e:
-        log.error(f"Slack alert failed: {e}")
-
-
 # ─── Pipeline Logic ──────────────────────────────────────────────────────────
 
 
@@ -105,11 +92,19 @@ def run_newsapi(
     config: Config,
     loader: BigQueryLoader,
     pipeline_run_id: str,
-    known_hashes: dict[str, str],
+    baseline_hashes: dict[str, str],
+    drift_events: list[DriftEvent],
+    stored_contracts: set[str],
     dry_run: bool = False,
 ) -> dict[str, int]:
     """
     Run the NewsAPI pipeline for all query terms.
+
+    Args:
+        baseline_hashes: Read-only dict of last run's contract hashes
+                         (loaded from BigQuery). Never mutated.
+        stored_contracts: Shared set tracking which endpoints already had
+                          a contract stored THIS run (avoids duplicate inserts).
 
     Returns a stats dict: {articles, mentions, errors}
     """
@@ -145,12 +140,20 @@ def run_newsapi(
                     f"NewsAPI: Fatal error ({result.error_type}) on '{term}'. "
                     "Halting pipeline to prevent cascading failures."
                 )
+                notify_fatal_error(
+                    config,
+                    api_source="newsapi",
+                    error_type=result.error_type,
+                    error_message=result.error_message or "Unknown",
+                    query_term=term,
+                    run_id=pipeline_run_id,
+                )
                 break
 
             log.error(f"NewsAPI: Skipping '{term}' due to error: {result.error_message}")
             continue
 
-        # 4. Check for schema drift
+        # 4. Check for schema drift (compare against BASELINE, not this run)
         total_results = result.raw_response.get("totalResults", 0)
 
         if total_results == 0:
@@ -159,23 +162,33 @@ def run_newsapi(
             if not result.raw_response.get("articles"):
                 log.info(f"NewsAPI: No items found for '{term}'. Skipping search drift check.")
             else:
+                lookup_key = "newsapi:/v2/everything"
+                baseline_hash = baseline_hashes.get(lookup_key)
                 drift_detected = check_drift(
-                    response_hash, known_hashes, "newsapi", "/v2/everything"
+                    response_hash, baseline_hashes, "newsapi", "/v2/everything"
                 )
 
-                if drift_detected:
+                if drift_detected and lookup_key not in stored_contracts:
                     key_paths = extract_key_paths(result.raw_response)
                     contract_row = build_contract_row(
                         "newsapi", "/v2/everything", response_hash, key_paths, pipeline_run_id
                     )
-                    # Check if this is an update to an existing contract
-                    lookup_key = "newsapi:/v2/everything"
-                    if lookup_key in known_hashes:
-                        contract_row["drift_from"] = known_hashes[lookup_key]
+                    if baseline_hash is not None:
+                        contract_row["drift_from"] = baseline_hash
 
                     if not dry_run:
                         loader.insert_api_contracts([contract_row])
-                    known_hashes[lookup_key] = response_hash
+                    stored_contracts.add(lookup_key)
+
+                    drift_events.append(
+                        DriftEvent(
+                            api_source="newsapi",
+                            endpoint="/v2/everything",
+                            previous_hash=baseline_hash,
+                            new_hash=response_hash,
+                            key_paths=key_paths,
+                        )
+                    )
 
         # 5. Validate
         parsed, warnings = validate_response(result)
@@ -211,12 +224,19 @@ def run_youtube(
     config: Config,
     loader: BigQueryLoader,
     pipeline_run_id: str,
-    known_hashes: dict[str, str],
+    baseline_hashes: dict[str, str],
+    drift_events: list[DriftEvent],
+    stored_contracts: set[str],
     dry_run: bool = False,
 ) -> dict[str, int]:
     """
     Run the YouTube pipeline for all query terms.
     Two-step fetch: search.list → videos.list.
+
+    Args:
+        baseline_hashes: Read-only dict of last run's contract hashes.
+        stored_contracts: Shared set tracking which endpoints already had
+                          a contract stored THIS run.
 
     Returns a stats dict: {videos, mentions, errors, quota_used}
     """
@@ -250,25 +270,44 @@ def run_youtube(
                     f"YouTube: Fatal error ({search_result.error_type}) on '{term}'. "
                     "Halting YouTube to prevent cascading failures."
                 )
+                notify_fatal_error(
+                    config,
+                    api_source="youtube",
+                    error_type=search_result.error_type,
+                    error_message=search_result.error_message or "Unknown",
+                    query_term=term,
+                    run_id=pipeline_run_id,
+                )
                 break
             log.error(
                 f"YouTube: Skipping '{term}' due to search error: {search_result.error_message}"
             )
             continue
 
-        # Drift check on search endpoint
-        drift_detected = check_drift(search_hash, known_hashes, "youtube", "search.list")
-        if drift_detected:
+        # Drift check on search endpoint (compare against BASELINE only)
+        lookup_key = "youtube:search.list"
+        baseline_hash = baseline_hashes.get(lookup_key)
+        drift_detected = check_drift(search_hash, baseline_hashes, "youtube", "search.list")
+        if drift_detected and lookup_key not in stored_contracts:
             key_paths = extract_key_paths(search_result.raw_response)
             contract_row = build_contract_row(
                 "youtube", "search.list", search_hash, key_paths, pipeline_run_id
             )
-            lookup_key = "youtube:search.list"
-            if lookup_key in known_hashes:
-                contract_row["drift_from"] = known_hashes[lookup_key]
+            if baseline_hash is not None:
+                contract_row["drift_from"] = baseline_hash
             if not dry_run:
                 loader.insert_api_contracts([contract_row])
-            known_hashes[lookup_key] = search_hash
+            stored_contracts.add(lookup_key)
+
+            drift_events.append(
+                DriftEvent(
+                    api_source="youtube",
+                    endpoint="search.list",
+                    previous_hash=baseline_hash,
+                    new_hash=search_hash,
+                    key_paths=key_paths,
+                )
+            )
 
         # Validate search response
         search_parsed, search_warnings = validate_search_response(search_result)
@@ -310,24 +349,43 @@ def run_youtube(
                     f"YouTube: Fatal error ({details_result.error_type}) on video details. "
                     "Halting YouTube."
                 )
+                notify_fatal_error(
+                    config,
+                    api_source="youtube",
+                    error_type=details_result.error_type,
+                    error_message=details_result.error_message or "Unknown",
+                    query_term=term,
+                    run_id=pipeline_run_id,
+                )
                 break
             log.error(f"YouTube: Skipping '{term}' video details: {details_result.error_message}")
             stats["quota_used"] += estimate_quota_used(1, 1)
             continue
 
-        # Drift check on videos endpoint
-        drift_detected = check_drift(details_hash, known_hashes, "youtube", "videos.list")
-        if drift_detected:
+        # Drift check on videos endpoint (compare against BASELINE only)
+        lookup_key_vid = "youtube:videos.list"
+        baseline_hash_vid = baseline_hashes.get(lookup_key_vid)
+        drift_detected = check_drift(details_hash, baseline_hashes, "youtube", "videos.list")
+        if drift_detected and lookup_key_vid not in stored_contracts:
             key_paths = extract_key_paths(details_result.raw_response)
             contract_row = build_contract_row(
                 "youtube", "videos.list", details_hash, key_paths, pipeline_run_id
             )
-            lookup_key = "youtube:videos.list"
-            if lookup_key in known_hashes:
-                contract_row["drift_from"] = known_hashes[lookup_key]
+            if baseline_hash_vid is not None:
+                contract_row["drift_from"] = baseline_hash_vid
             if not dry_run:
                 loader.insert_api_contracts([contract_row])
-            known_hashes[lookup_key] = details_hash
+            stored_contracts.add(lookup_key_vid)
+
+            drift_events.append(
+                DriftEvent(
+                    api_source="youtube",
+                    endpoint="videos.list",
+                    previous_hash=baseline_hash_vid,
+                    new_hash=details_hash,
+                    key_paths=key_paths,
+                )
+            )
 
         # Validate video details
         videos_parsed, video_warnings = validate_video_response(details_result)
@@ -399,20 +457,49 @@ def main() -> None:
     started_at = datetime.now(UTC)
     run_id = loader.start_run(trigger_type=args.trigger) if not args.dry_run else "dry-run"
 
-    # Track known hashes for drift detection (in production, load from api_contracts table)
-    known_hashes: dict[str, str] = {}
+    # Load known API contracts from BigQuery so drift detection compares
+    # against LAST run's structure, not an empty baseline. On dry run or
+    # first-ever run, this returns an empty dict — everything will be a
+    # first observation (logged, not alerted).
+    if not args.dry_run:
+        baseline_hashes = loader.load_known_contracts()
+    else:
+        baseline_hashes: dict[str, str] = {}
+
+    # Collect drift events across both sources — notify once at the end
+    drift_events: list[DriftEvent] = []
+
+    # Track which endpoints already had a contract stored this run
+    # (avoids duplicate inserts when multiple query terms see the same drift)
+    stored_contracts: set[str] = set()
 
     # ─── Run each source ──────────────────────────────────────────────
     total_errors = 0
     total_loaded = 0
 
     # Lens 1: NewsAPI
-    news_stats = run_newsapi(config, loader, run_id, known_hashes, dry_run=args.dry_run)
+    news_stats = run_newsapi(
+        config,
+        loader,
+        run_id,
+        baseline_hashes,
+        drift_events,
+        stored_contracts,
+        dry_run=args.dry_run,
+    )
     total_loaded += news_stats["mentions"]
     total_errors += news_stats["errors"]
 
-    # Lens 2: YouTube (TODO: next module)
-    yt_stats = run_youtube(config, loader, run_id, known_hashes, dry_run=args.dry_run)
+    # Lens 2: YouTube
+    yt_stats = run_youtube(
+        config,
+        loader,
+        run_id,
+        baseline_hashes,
+        drift_events,
+        stored_contracts,
+        dry_run=args.dry_run,
+    )
     total_loaded += yt_stats["mentions"]
     total_errors += yt_stats["errors"]
 
@@ -422,6 +509,9 @@ def main() -> None:
         status = "partial"
     elif total_errors > 0 and total_loaded == 0:
         status = "failed"
+
+    completed_at = datetime.now(UTC)
+    duration = (completed_at - started_at).total_seconds()
 
     notes = (
         f"NewsAPI: {news_stats['articles']} articles -> {news_stats['mentions']} mentions. "
@@ -438,15 +528,34 @@ def main() -> None:
             youtube_records=yt_stats["videos"],
             total_loaded=total_loaded,
             total_errors=total_errors,
-            quota_used=0,
+            quota_used=yt_stats["quota_used"],
             notes=notes,
         )
 
     log.info(f"Pipeline complete | status={status} | {notes}")
 
-    # Send alert on failure
-    if status == "failed":
-        send_slack_alert(config, f"Pipeline run `{run_id}` failed.\n{notes}")
+    # ─── Send Slack notifications ─────────────────────────────────────
+
+    # Always notify on completion (success, partial, or failed)
+    notify_pipeline_result(
+        config,
+        run_id=run_id,
+        status=status,
+        news_stats=news_stats,
+        yt_stats=yt_stats,
+        duration_seconds=duration,
+    )
+
+    # Send ONE drift notification if any actual structural changes occurred
+    # (first observations are baselines — logged locally, not alerted)
+    notify_drift_summary(config, drift_events, run_id=run_id)
+
+    # Check YouTube quota and warn if getting close to limit
+    notify_quota_warning(
+        config,
+        quota_used=yt_stats["quota_used"],
+        run_id=run_id,
+    )
 
     # Exit with appropriate code
     if status == "failed":

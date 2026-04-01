@@ -81,6 +81,40 @@ class BigQueryLoader:
     def insert_api_contracts(self, rows: list[dict[str, Any]]) -> list[dict]:
         return self._insert_rows("api_contracts", rows)
 
+    # ─── Contract Loading (Drift Detection) ───────────────────────────────
+
+    def load_known_contracts(self) -> dict[str, str]:
+        """
+        Load the most recent contract hash for each (api_source, endpoint) pair.
+
+        Returns a dict mapping "api_source:endpoint" -> structure_hash,
+        which is the format check_drift() expects. This means drift detection
+        compares against the LAST RUN's contracts, not an empty dict.
+
+        If the query fails (table doesn't exist yet, permissions, etc.),
+        returns an empty dict so the pipeline still runs — it just treats
+        everything as a first observation.
+        """
+        query = f"""
+            SELECT api_source, endpoint, structure_hash
+            FROM `{self._table_id("api_contracts")}`
+            WHERE is_current = TRUE
+        """
+
+        try:
+            results = self.client.query(query).result()
+            known: dict[str, str] = {}
+            for row in results:
+                lookup_key = f"{row.api_source}:{row.endpoint}"
+                known[lookup_key] = row.structure_hash
+
+            log.info(f"BigQuery: Loaded {len(known)} known API contracts for drift detection")
+            return known
+
+        except Exception as e:
+            log.warning(f"BigQuery: Could not load API contracts (table may not exist yet): {e}")
+            return {}
+
     # ─── Pipeline Run Lifecycle ───────────────────────────────────────────
 
     def start_run(self, trigger_type: str = "manual") -> str:
