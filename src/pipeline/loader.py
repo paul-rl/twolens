@@ -97,9 +97,9 @@ class BigQueryLoader:
         """
         query = f"""
             SELECT api_source, endpoint, structure_hash
-            FROM `{self._table_id('api_contracts')}`
+            FROM `{self._table_id("api_contracts")}`
             WHERE is_current = TRUE
-        """
+        """  # nosec B608
 
         try:
             results = self.client.query(query).result()
@@ -112,9 +112,7 @@ class BigQueryLoader:
             return known
 
         except Exception as e:
-            log.warning(
-                f"BigQuery: Could not load API contracts (table may not exist yet): {e}"
-            )
+            log.warning(f"BigQuery: Could not load API contracts (table may not exist yet): {e}")
             return {}
 
     def get_daily_quota_used(self) -> int:
@@ -131,10 +129,10 @@ class BigQueryLoader:
         """
         query = f"""
             SELECT COALESCE(SUM(quota_used), 0) AS total
-            FROM `{self._table_id('pipeline_runs')}`
+            FROM `{self._table_id("pipeline_runs")}`
             WHERE DATE(started_at) = CURRENT_DATE()
               AND status != 'running'
-        """
+        """  # nosec B608
 
         try:
             results = self.client.query(query).result()

@@ -180,13 +180,15 @@ def run_newsapi(
                         loader.insert_api_contracts([contract_row])
                     stored_contracts.add(lookup_key)
 
-                    drift_events.append(DriftEvent(
-                        api_source="newsapi",
-                        endpoint="/v2/everything",
-                        previous_hash=baseline_hash,
-                        new_hash=response_hash,
-                        key_paths=key_paths,
-                    ))
+                    drift_events.append(
+                        DriftEvent(
+                            api_source="newsapi",
+                            endpoint="/v2/everything",
+                            previous_hash=baseline_hash,
+                            new_hash=response_hash,
+                            key_paths=key_paths,
+                        )
+                    )
 
         # 5. Validate
         parsed, warnings = validate_response(result)
@@ -297,13 +299,15 @@ def run_youtube(
                 loader.insert_api_contracts([contract_row])
             stored_contracts.add(lookup_key)
 
-            drift_events.append(DriftEvent(
-                api_source="youtube",
-                endpoint="search.list",
-                previous_hash=baseline_hash,
-                new_hash=search_hash,
-                key_paths=key_paths,
-            ))
+            drift_events.append(
+                DriftEvent(
+                    api_source="youtube",
+                    endpoint="search.list",
+                    previous_hash=baseline_hash,
+                    new_hash=search_hash,
+                    key_paths=key_paths,
+                )
+            )
 
         # Validate search response
         search_parsed, search_warnings = validate_search_response(search_result)
@@ -373,13 +377,15 @@ def run_youtube(
                 loader.insert_api_contracts([contract_row])
             stored_contracts.add(lookup_key_vid)
 
-            drift_events.append(DriftEvent(
-                api_source="youtube",
-                endpoint="videos.list",
-                previous_hash=baseline_hash_vid,
-                new_hash=details_hash,
-                key_paths=key_paths,
-            ))
+            drift_events.append(
+                DriftEvent(
+                    api_source="youtube",
+                    endpoint="videos.list",
+                    previous_hash=baseline_hash_vid,
+                    new_hash=details_hash,
+                    key_paths=key_paths,
+                )
+            )
 
         # Validate video details
         videos_parsed, video_warnings = validate_video_response(details_result)
@@ -473,7 +479,12 @@ def main() -> None:
 
     # Lens 1: NewsAPI
     news_stats = run_newsapi(
-        config, loader, run_id, baseline_hashes, drift_events, stored_contracts,
+        config,
+        loader,
+        run_id,
+        baseline_hashes,
+        drift_events,
+        stored_contracts,
         dry_run=args.dry_run,
     )
     total_loaded += news_stats["mentions"]
@@ -481,7 +492,12 @@ def main() -> None:
 
     # Lens 2: YouTube
     yt_stats = run_youtube(
-        config, loader, run_id, baseline_hashes, drift_events, stored_contracts,
+        config,
+        loader,
+        run_id,
+        baseline_hashes,
+        drift_events,
+        stored_contracts,
         dry_run=args.dry_run,
     )
     total_loaded += yt_stats["mentions"]
